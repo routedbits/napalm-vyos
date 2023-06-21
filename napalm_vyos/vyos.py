@@ -143,6 +143,9 @@ class VyOSDriver(NetworkDriver):
             match_notchanged = re.findall("No configuration changes to commit", output_loadcmd)
             match_failed = re.findall("Failed to parse specified config file", output_loadcmd)
 
+            # Clean up candidate configuration
+            self.device.send_command("rm -f "+self._DEST_FILENAME)
+
             if match_failed:
                 raise ReplaceConfigException("Failed replace config: "
                                              + output_loadcmd)
