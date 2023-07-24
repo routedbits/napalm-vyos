@@ -141,7 +141,7 @@ class VyOSDriver(NetworkDriver):
         if os.path.exists(cfg_filename) is True:
             self._scp_client.scp_transfer_file(cfg_filename, self._DEST_FILENAME)
             self.device.send_command("cp "+self._BOOT_FILENAME+" "+self._BACKUP_FILENAME)
-            output_loadcmd = self.device.send_config_set(['load '+self._DEST_FILENAME])
+            output_loadcmd = self.device.send_config_set(['load '+self._DEST_FILENAME], read_timeout=60)
             match_loaded = re.findall("Load complete.", output_loadcmd)
             match_notchanged = re.findall("No configuration changes to commit", output_loadcmd)
             match_failed = re.findall("Failed to parse specified config file", output_loadcmd)
@@ -229,7 +229,7 @@ class VyOSDriver(NetworkDriver):
         if filename is None:
             filename = self._BACKUP_FILENAME
 
-            output_loadcmd = self.device.send_config_set(['load '+filename])
+            output_loadcmd = self.device.send_config_set(['load '+filename], read_timeout=60)
             match = re.findall("Load complete.", output_loadcmd)
             if not match:
                 raise ReplaceConfigException("Failed rollback config: "
