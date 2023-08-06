@@ -118,15 +118,12 @@ class VyOSDriver(NetworkDriver):
             'is_alive': self.device.remote_conn.transport.is_active()
         }
 
-    def load_replace_candidate(self, filename=None, config=None):
+    def load_candidate(self, method, filename=None, config=None):
         """
-        Only configuration files are supported with load_replace_candidate.
-        It must be a full config file like /config/config.boot
-        Due to the OS nature,  we do not
-        support a replace using a configuration string.
+        Generic method to load or merge a configuration in as a candidate config
         """
         if not filename and not config:
-            raise ReplaceConfigException('filename or config param must be provided.')
+            raise Exception('filename or config param must be provided.')
 
         if filename is None:
             temp_file = tempfile.NamedTemporaryFile(mode='w+')
@@ -136,65 +133,66 @@ class VyOSDriver(NetworkDriver):
         else:
             cfg_filename = filename
 
-
-
         if os.path.exists(cfg_filename) is True:
+            # Determine command based on method requested
+            cmd_method = None
+            if method == "replace":
+                cmd_method = "load"
+            elif method == "merge":
+                cmd_method = "merge"
+
+            # SCP file to device
             self._scp_client.scp_transfer_file(cfg_filename, self._DEST_FILENAME)
-            self.device.send_command("cp "+self._BOOT_FILENAME+" "+self._BACKUP_FILENAME)
-            output_loadcmd = self.device.send_config_set(['load '+self._DEST_FILENAME])
-            match_loaded = re.findall("Load complete.", output_loadcmd)
+
+            # Copy current startup (config.boot) to a backup file
+            self.device.send_command("cp {boot_filename} {backup_filename}".format(
+                boot_filename=self._BOOT_FILENAME,
+                backup_filename=self._BACKUP_FILENAME
+            ))
+
+            # Load or merge configuration into candidate
+            output_loadcmd = self.device.send_config_set([
+                "{cmd_method} {destination_filename}".format(
+                    cmd_method=cmd_method,
+                    destination_filename=self._DEST_FILENAME
+                )
+            ])
+            match_loaded = re.findall("{cmd_method} complete.".format(
+                cmd_method=cmd_method.capitalize()), output_loadcmd)
             match_notchanged = re.findall("No configuration changes to commit", output_loadcmd)
             match_failed = re.findall("Failed to parse specified config file", output_loadcmd)
 
-            # Clean up candidate configuration
-            self.device.send_command("rm -f "+self._DEST_FILENAME)
+            # Clean up temporary file
+            self.device.send_command("rm -f {destination_filename}".format(
+                destination_filename=self._DEST_FILENAME))
 
             if match_failed:
-                raise ReplaceConfigException("Failed replace config: "
-                                             + output_loadcmd)
+                raise Exception('Failed {method} config: {output_loadcmd}'.format(
+                    method=method,
+                    output_loadcmd=output_loadcmd
+                ))
 
             if not match_loaded:
                 if not match_notchanged:
-                    raise ReplaceConfigException("Failed replace config: "
-                                                 + output_loadcmd)
+                    raise Exception('Failed {method} config: {output_loadcmd}'.format(
+                        method=method,
+                        output_loadcmd=output_loadcmd
+                    ))
 
         else:
-            raise ReplaceConfigException("config file is not found")
+            raise Exception("config file is not found")
 
+    def load_replace_candidate(self, filename=None, config=None):
+        try:
+            self.load_candidate("replace", filename, config)
+        except Exception as err:
+            raise ReplaceConfigException(err) from None
 
     def load_merge_candidate(self, filename=None, config=None):
-        """
-        Only configuration in set-format is supported with load_merge_candidate.
-        """
-
-        if not filename and not config:
-            raise MergeConfigException('filename or config param must be provided.')
-
-        if filename is None:
-            temp_file = tempfile.NamedTemporaryFile(mode='w+')
-            temp_file.write(config)
-            temp_file.flush()
-            cfg_filename = temp_file.name
-        else:
-            cfg_filename = filename
-
-
-        if os.path.exists(cfg_filename) is True:
-            with open(cfg_filename) as f:
-                self.device.send_command("cp "+self._BOOT_FILENAME+" "
-                                         + self._BACKUP_FILENAME)
-                self._new_config = f.read()
-                cfg = [x for x in self._new_config.split("\n") if x]
-                output_loadcmd = self.device.send_config_set(cfg)
-                match_setfailed = re.findall("Delete failed", output_loadcmd)
-                match_delfailed = re.findall("Set failed", output_loadcmd)
-
-                if match_setfailed or match_delfailed:
-                    raise MergeConfigException("Failed merge config: "
-                                               + output_loadcmd)
-        else:
-            raise MergeConfigException("config file is not found")
-
+        try:
+            self.load_candidate("merge", filename, config)
+        except Exception as err:
+            raise MergeConfigException(err) from None
 
     def discard_config(self):
         self.device.exit_config_mode()
