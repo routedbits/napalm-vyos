@@ -13,12 +13,13 @@
 # the License.
 
 """napalm_vyos package."""
+from importlib.metadata import PackageNotFoundError, version
+
 from napalm_vyos.vyos import VyOSDriver
-import pkg_resources
 
 try:
-    __version__ = pkg_resources.get_distribution('napalm-vyos').version
-except pkg_resources.DistributionNotFound:
+    __version__ = version('napalm-vyos')
+except PackageNotFoundError:
     __version__ = "Not installed"
 
 __all__ = ('VyOSDriver',)
